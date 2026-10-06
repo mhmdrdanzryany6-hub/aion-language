@@ -1,0 +1,11 @@
+{
+  "name": "aion-language",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "AION: a readable, statically checked language with an explicit bytecode virtual machine",
+  "engines": {"node": ">=24"},
+  "bin": {"aion": "./cli.mjs"},
+  "scripts": {"test": "node --test *.test.mjs", "demo": "node cli.mjs run showcase.ai", "check": "node cli.mjs check showcase.ai"},
+  "license": "MIT"
+}

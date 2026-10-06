@@ -1,0 +1,17 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {run} from './api.mjs';
+const output=s=>run(s).output;
+test('map filter reduce compose',()=>assert.equal(output('print(reduce(filter(map(range(5),fn(x){return x*2}),fn(x){return x>3}),0,fn(a,b){return a+b}))'),'18\n'));
+test('sort returns copy',()=>assert.equal(output('let a=[3,1,2] print(sort(a),a)'),'[1, 2, 3] [3, 1, 2]\n'));
+test('string conversion functions',()=>assert.equal(output('print(upper(trim(" aion ")),join(split("a,b",","),"-"))'),'AION a-b\n'));
+test('JSON roundtrip',()=>assert.equal(output('let m=json_parse(\'{{"n":3}}\') print(json_stringify(m))'),'{"n":3}\n'));
+test('invalid JSON controlled',()=>assert.throws(()=>run('json_parse("no")'),e=>e.code==='E_JSON'));
+test('cyclic JSON rejected',()=>assert.throws(()=>run('let a={} a.self=a json_stringify(a)'),e=>e.code==='E_JSON'));
+test('display supports cycles',()=>assert.match(output('let a={} a.self=a print(a)'),/cycle/i));
+test('descending range',()=>assert.equal(output('print(range(5,0,-2))'),'[5, 3, 1]\n'));
+test('zero range step rejected',()=>assert.throws(()=>run('range(0,5,0)'),e=>e.code==='E_RANGE'));
+test('large allocation rejected',()=>assert.throws(()=>run('range(100001)'),e=>e.code==='E_MEMORY'));
+test('seeded random reproducible',()=>assert.equal(run('print(random())',{seed:42}).output,run('print(random())',{seed:42}).output));
+test('runtime arguments',()=>assert.equal(run('print(args())',{args:['a','b']}).output,'[a, b]\n'));
+test('assert failure controlled',()=>assert.throws(()=>run('assert(false,"expected")'),e=>e.code==='E_ASSERT'));
+test('pop empty array rejected',()=>assert.throws(()=>run('pop([])'),e=>e.code==='E_BOUNDS'));
+test('numeric overflow rejected',()=>assert.throws(()=>run('print(9007199254740991+1)'),e=>e.code==='E_NUMBER'));

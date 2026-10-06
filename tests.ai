@@ -1,0 +1,2 @@
+fn test_arithmetic() { assert(2 + 2 == 4) }
+fn test_collection() { assert(len(range(5)) == 5) }

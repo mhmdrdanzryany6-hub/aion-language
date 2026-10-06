@@ -1,0 +1,2 @@
+import { square } from "./math.ai"
+print(square(12))

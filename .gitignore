@@ -1,0 +1,4 @@
+node_modules/
+*.aion.json
+*.log
+.DS_Store

@@ -1,0 +1,18 @@
+fn fib(n: Int) -> Int {
+  if n < 2 { return n }
+  return fib(n - 1) + fib(n - 2)
+}
+fn counter(start: Int) {
+  var value = start
+  return fn() { value += 1 return value }
+}
+fn main() {
+  print("AION / Protocol of ideas")
+  let next = counter(40)
+  print("Captured state:", next(), next())
+  let squares = map(range(1, 8), fn(x) { return x * x })
+  print("Squares:", squares)
+  print("Fibonacci:", fib(12))
+  let profile = {"language": "AION", "version": "0.1.0"}
+  print(json_stringify(profile))
+}
