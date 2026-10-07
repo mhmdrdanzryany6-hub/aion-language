@@ -1,0 +1,4 @@
+let amounts: Int[] = json_parse(read_text("sales.json"))
+let total = reduce(amounts, 0, fn(a, b) { return a + b })
+print("تعداد: {len(amounts)}")
+print("جمع: {total}")

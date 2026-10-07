@@ -13,6 +13,6 @@ fn main() {
   let squares = map(range(1, 8), fn(x) { return x * x })
   print("Squares:", squares)
   print("Fibonacci:", fib(12))
-  let profile = {"language": "AION", "version": "0.1.0"}
+  let profile = {"language": "AION", "version": "0.2.0"}
   print(json_stringify(profile))
 }

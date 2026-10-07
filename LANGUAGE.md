@@ -1,8 +1,8 @@
-# AION language reference — 0.1
+# AION language reference — 0.2
 
 ## Bindings and types
 
-`let` prevents rebinding. `var` permits assignment. Neither freezes the referenced collection. Types are `Int`, `Float`, `Bool`, `String`, `Map`, `Void`, `Any` and arrays such as `Int[]`. Omitted annotations are inferred where possible; omitted parameters are `Any`. Type checking is gradual, not sound: passing through `Any`, indirect native calls and collection aliases can lose precision. Known incompatible assignments are rejected.
+`let` prevents rebinding. `var` permits assignment. Neither freezes the referenced collection. Types are `Int`, `Float`, `Bool`, `String`, `Map`, `Void`, `Any` and arrays such as `Int[]`. Omitted annotations are inferred where possible; omitted parameters are `Any`. Static checking is gradual: `Any` loses compile-time precision. Runtime contracts validate typed binding initialization/reassignment, function parameters, parameter reassignment and explicit function returns. Array contracts follow identities and nested child arrays, protecting native push and indexed mutation through aliases. These contracts do not establish ownership or a formally sound static type system.
 
 `Int` uses JavaScript safe integers (±9,007,199,254,740,991). Numbers must be finite. Division has static type `Float`; remainder follows JavaScript's signed remainder semantics. There is no implicit string/number arithmetic conversion. `Float` can accept an `Int`. Runtime numeric values are not separately tagged, so `type(2.0)` returns `Int`.
 
@@ -72,3 +72,13 @@ Imports and exports are only permitted at module scope. Only named bindings and 
 ## Runtime limits
 
 Default fuel is 1,000,000 units; each bytecode instruction costs at least one, and selected native operations also charge work. Default call depth is 256. Cumulative collection allocation is limited to 1,000,000 logical units, with a 100,000-unit limit per allocation. Output is limited to 2,000,000 JavaScript characters. JSON nesting is capped at 150; AST depth is capped before type checking. These are logical accounting limits and do not exactly model CPU time or heap bytes.
+
+Runtime contract traversal consumes fuel and is depth-bounded. `steps` reports consumed fuel units and `remainingFuel` reports the balance. `Any[]` is an array with unconstrained element types, whereas `Any` can hold any value. Shared arrays enforce every attached contract. Binding an integer-only array as both Int[] and Float[] therefore preserves the stricter Int element rule on subsequent mutation.
+
+## Project tools
+
+`init DIRECTORY` creates an empty-directory project with aion.json, main.ai and tests.ai. `run`, `check`, `build`, `test` and `debug` accept the configured entry/test file when no filename is supplied. Manifest file paths must remain in the project root. REPL uses persistent lexical bindings, permits multiline blocks and supports :help, :reset, :quit; imports use the file runner instead.
+
+`debug --break FILE:LINE --interactive` pauses before the corresponding source instruction; `step` pauses at the next source-line transition, `continue` resumes to a breakpoint, `locals` inspects the current environment and `quit` stops. Multiple --break flags are allowed. No interactive flag means snapshots continue without a pause. Debugger locals do not include every parent lexical environment, and lines can map to several instructions.
+
+Version 2 bundles include declaration/return contracts and are verified for structure, operands, references, dependency cycles and reachable stack/scope heights. Version 1 artifacts are unsupported; rebuild from .ai source.

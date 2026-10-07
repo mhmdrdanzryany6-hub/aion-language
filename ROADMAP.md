@@ -2,11 +2,11 @@
 
 ## Next: reliability
 
-Expand fuzzing, validate bytecode control flow, improve diagnostics, track runtime collection element types, define interoperable tagged numeric values, add formatter layout rules and interactive debugger breakpoints. Add persistent module caches only after their semantics are specified.
+Expand property-based fuzzing, define tagged numeric values, improve inferred function contracts and source maps, add formatter reflow rules and richer debugger lexical inspection. Version 0.2 already provides reachable bytecode flow checks, runtime array contracts, Persian guidance, project configuration, REPL and interactive breakpoints. Add persistent module caches only after their semantics are specified.
 
 ## Later: tooling
 
-Language Server Protocol, editor integration, package manifests, source maps, reproducible benchmarks and compatibility suites.
+Language Server Protocol, editor integration, package/dependency resolution, source maps, reproducible benchmarks and compatibility suites. Project manifests are already available; a package registry is not.
 
 ## Research goals
 

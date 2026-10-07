@@ -1,24 +1,24 @@
 export const OPCODES=new Set('CONST LOAD DECL STORE POP DUP DUP2 UNARY BINARY BOOL JUMP JFALSE JTRUE ENTER LEAVE CLOSURE CALL RETURN ARRAY MAP GET SET CONCAT ITER ITER_NEXT'.split(' '));
 export function emitBytecode(ast,source,filename,types={}) {
-  const module={format:'aion.module',version:1,filename,source,constants:[],functions:[],imports:[],exports:Object.keys(types.exports??{}),types:types.exports??{}};
+  const module={format:'aion.module',version:2,filename,source,constants:[],functions:[],imports:[],exports:Object.keys(types.exports??{}),types:types.exports??{}};
   class Compiler {
-    constructor(name,params=[]){this.fn={name,params:params.map(p=>p.name),paramTypes:params.map(p=>p.type),code:[],locations:[]};this.index=module.functions.length;module.functions.push(this.fn);this.depth=0;this.loops=[];this.unique=0;}
+    constructor(name,params=[],returnType='Any'){this.fn={name,params:params.map(p=>p.name),paramTypes:params.map(p=>p.type),returnType,code:[],locations:[]};this.index=module.functions.length;module.functions.push(this.fn);this.depth=0;this.loops=[];this.unique=0;}
     emit(op,...args){const i=this.fn.code.length;this.fn.code.push([op,...args]);this.fn.locations.push(this.loc??{filename,line:1,column:1,start:0,end:1});return i;}
     patch(i,target){this.fn.code[i][this.fn.code[i].length-1]=target;}
     constant(value){let index=module.constants.findIndex(v=>v===value);if(index<0){index=module.constants.length;module.constants.push(value);}this.emit('CONST',index);}
-    closure(n){const child=new Compiler(n.name??'<lambda>',n.params);child.statement(n.body);child.constant(null);child.emit('RETURN');this.emit('CLOSURE',child.index);}
-    body(nodes){for(const n of nodes)if(n.kind==='function'){this.loc=n.loc;this.closure(n);this.emit('DECL',n.name,false);}
+    closure(n){const child=new Compiler(n.name??'<lambda>',n.params,n.returns);child.statement(n.body);child.constant(null);child.emit('RETURN');this.emit('CLOSURE',child.index);}
+    body(nodes){for(const n of nodes)if(n.kind==='function'){this.loc=n.loc;this.closure(n);this.emit('DECL',n.name,false,'Fn');}
       for(const n of nodes)if(n.kind!=='function')this.statement(n);}
     statement(n){this.loc=n.loc;
       switch(n.kind){
         case 'import':module.imports.push({names:n.names,path:n.path,loc:n.loc});break;
-        case 'decl':this.expression(n.value);this.emit('DECL',n.name,n.mutable);break;
+        case 'decl':this.expression(n.value);this.loc=n.loc;this.emit('DECL',n.name,n.mutable,n.checkedType??'Any');break;
         case 'expression':this.expression(n.value);this.emit('POP');break;
         case 'block':this.emit('ENTER');this.depth++;this.body(n.body);this.emit('LEAVE');this.depth--;break;
         case 'return':if(n.value)this.expression(n.value);else this.constant(null);this.emit('RETURN');break;
         case 'if': {this.expression(n.condition);const no=this.emit('JFALSE',0);this.statement(n.yes);if(n.no){const end=this.emit('JUMP',0);this.patch(no,this.fn.code.length);this.statement(n.no);this.patch(end,this.fn.code.length);}else this.patch(no,this.fn.code.length);break;}
         case 'while': {const start=this.fn.code.length;this.expression(n.condition);const end=this.emit('JFALSE',0);const loop={depth:this.depth,start,breaks:[]};this.loops.push(loop);this.statement(n.body);this.emit('JUMP',start);const finish=this.fn.code.length;this.patch(end,finish);loop.breaks.forEach(i=>this.patch(i,finish));this.loops.pop();break;}
-        case 'for': {this.emit('ENTER');this.depth++;const iterator=`$iter${this.unique++}`;this.expression(n.iterable);this.emit('ITER');this.emit('DECL',iterator,false);const start=this.fn.code.length;const end=this.emit('ITER_NEXT',iterator,0);this.emit('ENTER');this.depth++;this.emit('DECL',n.name,false);
+        case 'for': {this.emit('ENTER');this.depth++;const iterator=`$iter${this.unique++}`;this.expression(n.iterable);this.emit('ITER');this.emit('DECL',iterator,false,'Any');const start=this.fn.code.length;const end=this.emit('ITER_NEXT',iterator,0);this.emit('ENTER');this.depth++;this.emit('DECL',n.name,false,'Any');
           const loop={depth:this.depth-1,start,breaks:[]};this.loops.push(loop);this.statement(n.body);this.emit('LEAVE');this.depth--;this.emit('JUMP',start);const finish=this.fn.code.length;this.patch(end,finish);loop.breaks.forEach(i=>this.patch(i,finish));this.loops.pop();this.emit('LEAVE');this.depth--;break;}
         case 'break':case 'continue':{const loop=this.loops.at(-1);for(let i=this.depth;i>loop.depth;i--)this.emit('LEAVE');if(n.kind==='break')loop.breaks.push(this.emit('JUMP',0));else this.emit('JUMP',loop.start);break;}
       }

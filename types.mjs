@@ -18,9 +18,10 @@ class Scope {
   get(name,loc){if(this.names.has(name))return this.names.get(name);if(this.parent)return this.parent.get(name,loc);fail('E_NAME',`Unknown name '${name}'`,loc);}
   define(name,type,mutable,loc){if(this.names.has(name))fail('E_NAME',`Duplicate binding '${name}'`,loc);const info={type,mutable};this.names.set(name,info);return info;}
 }
-export function check(ast, imports={}) {
+export function check(ast, imports={}, globals={}) {
   const builtins=new Scope();for(const[name,type]of Object.entries(BUILTIN_TYPES))builtins.define(name,type,false,{});
   let scope=new Scope(builtins),loop=0,current=null;const root=scope,exports=Object.create(null);
+  for(const [name,info] of Object.entries(globals))scope.define(name,info.type,info.mutable,{});
   const expect=(expected,actual,loc)=>{if(!compatible(expected,actual))fail('E_TYPE',`Expected ${typeName(expected)}, received ${typeName(actual)}`,loc);};
   const bool=(type,loc)=>expect('Bool',type,loc);
   const numeric=(type,loc)=>{if(!['Any','Int','Float'].includes(type))fail('E_TYPE',`Expected number, received ${typeName(type)}`,loc);};
@@ -42,7 +43,7 @@ export function check(ast, imports={}) {
     switch(n.kind){
       case 'import': for(const name of n.names)scope.define(name,imports[n.path]?.[name]??'Any',false,n.loc);break;
       case 'function': {const info=scope.get(n.name,n.loc);functionBody(n,info.type);if(n.exported)exports[n.name]=info.type;break;}
-      case 'decl': {const actual=expr(n.value);const type=n.annotation??actual;expect(type,actual,n.loc);scope.define(n.name,type,n.mutable,n.loc);if(n.exported)exports[n.name]=type;break;}
+      case 'decl': {const actual=expr(n.value);const type=n.annotation??actual;expect(type,actual,n.loc);n.checkedType=typeof type==='string'?type:'Fn';scope.define(n.name,type,n.mutable,n.loc);if(n.exported)exports[n.name]=type;break;}
       case 'expression': expr(n.value);break;
       case 'block': child(()=>statements(n.body));break;
       case 'if': bool(expr(n.condition),n.condition.loc);statement(n.yes);if(n.no)statement(n.no);break;
@@ -56,7 +57,7 @@ export function check(ast, imports={}) {
     switch(n.kind){
       case 'literal': return n.value===null?'Any':typeof n.value==='number'?(Number.isInteger(n.value)?'Int':'Float'):typeof n.value==='boolean'?'Bool':'String';
       case 'name':return scope.get(n.name,n.loc).type;
-      case 'array': {const types=n.items.map(expr);return (types.length?types.reduce((a,b)=>compatible(a,b)?a:'Any'):'Any')+'[]';}
+      case 'array': {const types=n.items.map(expr);const joined=types.length?types.reduce((a,b)=>a===b?a:['Int','Float'].includes(a)&&['Int','Float'].includes(b)?'Float':'Any'):'Any';return (typeof joined==='string'?joined:'Any')+'[]';}
       case 'map': n.entries.forEach(([,v])=>expr(v));return 'Map';
       case 'interpolate': n.parts.forEach(p=>{if(typeof p!=='string')expr(p);});return 'String';
       case 'lambda': return functionBody(n,fnType(n.params.map(p=>p.type),n.returns));

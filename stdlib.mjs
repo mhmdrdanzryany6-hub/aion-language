@@ -10,7 +10,7 @@ export function standardLibrary(ctx) {
     assert:(condition,message='Assertion failed')=>{if(!boolean(condition,ctx.loc))fail('E_ASSERT',string(message,ctx.loc),ctx.loc);return null;},
     len:x=>{if(isMap(x))return x.entries.size;if(Array.isArray(x)||typeof x==='string')return x.length;fail('E_TYPE','len expects Array, String or Map',ctx.loc);},
     range:(...xs)=>{let start=0,end=xs[0],step=1;if(xs.length>=2)[start,end]=xs;if(xs.length===3)step=xs[2];xs.forEach(x=>integer(x,ctx.loc));if(step===0)fail('E_RANGE','range step cannot be zero',ctx.loc);const length=Math.max(0,Math.ceil((end-start)/step));ctx.allocate(length);ctx.charge(length);return Array.from({length},(_,i)=>finite(start+i*step,ctx.loc));},
-    push:(a,x)=>{array(a,ctx.loc);ctx.allocate(1);a.push(x);return null;},
+    push:(a,x)=>{array(a,ctx.loc);if(a.length>=100000)fail('E_MEMORY','Collection size limit exceeded',ctx.loc);ctx.types.mutation(a,x,ctx.loc);ctx.allocate(1);a.push(x);return null;},
     pop:a=>{array(a,ctx.loc);if(!a.length)fail('E_BOUNDS','Cannot pop an empty array',ctx.loc);return a.pop();},
     keys:x=>{if(!isMap(x))fail('E_TYPE','keys expects Map',ctx.loc);ctx.allocate(x.entries.size);return [...x.entries.keys()];},
     values:x=>{if(!isMap(x))fail('E_TYPE','values expects Map',ctx.loc);ctx.allocate(x.entries.size);return [...x.entries.values()];},

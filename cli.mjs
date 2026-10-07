@@ -1,33 +1,66 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
-import { buildFile,runBundle,createFileHost } from './modules.mjs';
 import path from 'node:path';
+import { buildFile, runBundle, createFileHost } from './modules.mjs';
 import { disassemble } from './api.mjs';
 import { format } from './formatter.mjs';
-const [command='help',file,...rest]=process.argv.slice(2);
-try{
-  if(command==='help'||command==='--help')console.log('AION 0.1.0\nrun FILE    Execute a program\ncheck FILE  Check syntax and types\nbuild FILE  Save a bytecode bundle\nexec FILE   Execute a bundle\ndisasm FILE Show bytecode\nfmt FILE    Format source');
-  else if(command==='--version')console.log('AION 0.1.0');
-  else if(!['run','check','build','exec','disasm','fmt','test','debug'].includes(command))throw new Error(`Unknown command: ${command}`);
+import { parseArgs } from './cli-options.mjs';
+import { initProject, projectFile } from './project.mjs';
+import { createDebugger } from './debugger.mjs';
+import { diagnosticData, renderDiagnostic } from './diagnostic-locale.mjs';
+import { AionError } from './diagnostic.mjs';
+import { repl } from './repl.mjs';
+const HELP = `AION 0.2.0 · Node 24+\nrun [FILE]       Execute source or project entry\ncheck [FILE]     Check syntax and types\nbuild [FILE] [OUTPUT]  Save a validated version 2 bundle\nexec BUNDLE      Execute bytecode\ndisasm [FILE]    Show instructions\nfmt FILE         Format source (--check never writes)\ntest [FILE]      Run test_ functions or configured tests\ndebug [FILE]     Trace, --break LINE|FILE:LINE, --interactive\ninit DIRECTORY   Create project without overwriting files\nrepl             Persistent interactive language shell\nhelp / --version\nOptions: --fuel N, --depth N, --seed N, --allow-read DIR,\n--allow-write DIR, --lang en|fa, --json-errors, --output FILE.\nProgram arguments follow --. Debugger: step, continue, locals, quit.\nTutorial: TUTORIAL.fa.md or http://127.0.0.1:4173/tutorial.html`;
+let parsed;
+function requireFile(file) { if (!file || !fs.existsSync(file) || !fs.statSync(file).isFile()) throw new AionError('E_FILE', `Cannot read ${file ?? '(missing file)'}`); }
+function debugCommand() {
+  process.stderr.write('debug> '); const bytes = [], byte = Buffer.alloc(1);
+  while (fs.readSync(0, byte, 0, 1, null)) { if (byte[0] === 10) break; if (bytes.length > 1000) throw new AionError('E_ARGS', 'Debugger command too long'); bytes.push(byte[0]); }
+  return bytes.length ? Buffer.from(bytes).toString('utf8').replace(/\r$/, '') : 'continue';
+}
+try {
+  parsed = parseArgs(process.argv.slice(2));
+  const { command, options } = parsed; let file = parsed.file;
+  if (['help', '--help'].includes(command)) console.log(HELP);
+  else if (command === '--version') console.log('AION 0.2.0');
+  else if (command === 'init') { if (!file) throw new AionError('E_ARGS', 'init requires DIRECTORY'); console.log(`Created ${initProject(file)}`); }
+  else if (command === 'repl') await repl({ lang: options.lang });
+  else if (!['run', 'check', 'build', 'exec', 'disasm', 'fmt', 'test', 'debug'].includes(command)) throw new AionError('E_ARGS', `Unknown command: ${command}`);
   else {
-    if(!file||!fs.existsSync(file))throw new Error(`E_FILE: Cannot read ${file??'(missing file)'}`);
-    if(command==='fmt'){fs.writeFileSync(file,format(fs.readFileSync(file,'utf8')));console.log(`Formatted ${file}`);}
-    else {const bundle=command==='exec'?JSON.parse(fs.readFileSync(file,'utf8')):buildFile(file);
-      if(command==='check')console.log('Check passed');
-      if(['run','exec','debug','test'].includes(command)){
-        const fuelAt=rest.indexOf('--fuel'),depthAt=rest.indexOf('--depth'),argsAt=rest.indexOf('--');
-        const permissions=flag=>rest.flatMap((x,i)=>x===flag?[rest[i+1]]:[]);
-        const options={...(fuelAt>=0?{fuel:Number(rest[fuelAt+1])}:{}),...(depthAt>=0?{maxDepth:Number(rest[depthAt+1])}:{}),args:argsAt>=0?rest.slice(argsAt+1):[],host:createFileHost({base:path.dirname(path.resolve(file)),read:permissions('--allow-read'),write:permissions('--allow-write')})};
-        if(command==='debug')options.onStep=s=>console.error(`${s.location.filename}:${s.location.line} ${s.function} #${s.ip} ${s.instruction.join(' ')} [${s.stack.join(', ')}]`);
-        if(command==='test'){
-          const initial=runBundle(bundle,{...options,entry:false});const names=[...initial.globals.bindings].filter(([name,cell])=>name.startsWith('test_')&&cell.value?.tag==='closure').map(([name])=>name);
-          if(!names.length)throw new Error('No test_ functions found');
-          let failed=0;for(const name of names){try{const fresh=runBundle(bundle,{...options,entry:false});fresh.vm.invoke(fresh.globals.bindings.get(name).value,[]);console.log(`PASS ${name}`);}catch(e){failed++;console.error(`FAIL ${name}: ${e.code??'E_TEST'} ${e.message}`);}}
-          console.log(`${names.length-failed} passed, ${failed} failed`);if(failed)process.exitCode=1;
-        }else process.stdout.write(runBundle(bundle,options).output);
+    let projectRoot;
+    if (!file && !['exec', 'fmt'].includes(command)) { projectRoot = process.cwd(); file = projectFile(command); }
+    parsed.file = file; requireFile(file);
+    if (command === 'fmt') {
+      const source = fs.readFileSync(file, 'utf8'), formatted = format(source);
+      if (options.check) { if (formatted !== source) { console.error(`Needs formatting: ${file}`); process.exitCode = 1; } else console.log('Formatting check passed'); }
+      else { fs.writeFileSync(file, formatted); console.log(`Formatted ${file}`); }
+    } else {
+      let bundle;
+      if (command === 'exec') {
+        if (fs.statSync(file).size > 20000000) throw new AionError('E_BYTECODE', 'Bundle exceeds size limit');
+        try { bundle = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw new AionError('E_BYTECODE', 'Invalid bundle JSON'); }
+      } else bundle = buildFile(file, { projectRoot });
+      if (command === 'check') console.log('Check passed');
+      if (command === 'build') { const output = parsed.output ?? file + '.aion.json'; fs.writeFileSync(output, JSON.stringify(bundle)); console.log(`Built ${output}`); }
+      if (command === 'disasm') console.log(bundle.modules.map(item => disassemble(item.module)).join('\n'));
+      if (['run', 'exec', 'debug', 'test'].includes(command)) {
+        const runtime = { ...(options.fuel ? { fuel: options.fuel } : {}), ...(options.depth ? { maxDepth: options.depth } : {}), ...(options.seed !== undefined ? { seed: options.seed } : {}), args: options.args, host: createFileHost({ base: path.dirname(path.resolve(file)), read: options.read, write: options.write }) };
+        if (command === 'debug') runtime.onStep = createDebugger({ breaks: options.breaks, interactive: options.interactive, trace: options.trace, emit: line => console.error(line), command: debugCommand });
+        if (command === 'test') {
+          const initial = runBundle(bundle, { ...runtime, entry: false });
+          const names = [...initial.globals.bindings].filter(([name, cell]) => name.startsWith('test_') && cell.value?.tag === 'closure').map(([name]) => name);
+          if (!names.length) throw new AionError('E_TEST', 'No test_ functions found');
+          let failed = 0;
+          for (const name of names) { try { const fresh = runBundle(bundle, { ...runtime, entry: false }); fresh.vm.invoke(fresh.globals.bindings.get(name).value, []); console.log(`PASS ${name}`); } catch (error) { failed++; console.error(`FAIL ${name}: ${error.code ?? 'E_TEST'} ${error.message}`); } }
+          console.log(`${names.length - failed} passed, ${failed} failed`); if (failed) process.exitCode = 1;
+        } else process.stdout.write(runBundle(bundle, runtime).output);
       }
-      if(command==='build'){const output=rest[0]??file+'.aion.json';fs.writeFileSync(output,JSON.stringify(bundle));console.log(`Built ${output}`);}
-      if(command==='disasm')console.log(bundle.modules.map(item=>disassemble(item.module)).join('\n'));
     }
   }
-}catch(error){let source='';if(error.filename&&error.filename!=='<input>'&&file){try{source=fs.readFileSync(path.resolve(path.dirname(file),error.filename),'utf8');}catch{}}console.error(error.render?error.render(source):`${error.code??'E_CLI'}: ${error.message}`);process.exitCode=1;}
+} catch (error) {
+  if (error.code !== 'E_DEBUG_STOP') {
+    const options = parsed?.options ?? { lang: process.argv.includes('fa') ? 'fa' : 'en', 'json-errors': process.argv.includes('--json-errors') }; let source = '';
+    if (error.filename && parsed?.file) { try { source = fs.readFileSync(path.resolve(path.dirname(parsed.file), error.filename), 'utf8'); } catch {} }
+    console.error(options['json-errors'] ? JSON.stringify(diagnosticData(error, options.lang)) : renderDiagnostic(error, source, options.lang)); process.exitCode = 1;
+  }
+}

@@ -1,0 +1,18 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {compile} from './api.mjs';import {validateBundle,runBundle} from './modules.mjs';
+const bundle=source=>({format:'aion.bundle',version:2,entry:'main.ai',modules:[{id:'main.ai',module:compile(source,{filename:'main.ai'}),dependencies:{}}]});
+const rejects=mutate=>{const b=bundle('print(1)');mutate(b.modules[0].module,b);assert.throws(()=>validateBundle(b),e=>e.code==='E_BYTECODE');};
+test('compiled loops and closures pass flow validation',()=>assert.equal(runBundle(bundle('var x=0 for n in range(5){if n==2 {continue} x+=n} fn f(){return fn(){return 3}} print(x,f()())')).output,'8 3\n'));
+test('stack underflow rejected before execution',()=>rejects(m=>m.functions[0].code[0]=['POP']));
+test('store underflow rejected',()=>rejects(m=>m.functions[0].code[0]=['STORE','x']));
+test('root environment escape rejected',()=>rejects(m=>m.functions[0].code[0]=['LEAVE']));
+test('invalid unary operator rejected',()=>rejects(m=>m.functions[0].code[0]=['UNARY','evil']));
+test('extra operands rejected',()=>rejects(m=>m.functions[0].code[0].push('extra')));
+test('invalid declaration mutability rejected',()=>rejects(m=>m.functions[0].code[0]=['DECL','x',42,'Any']));
+test('invalid return type rejected',()=>rejects(m=>m.functions[0].returnType=42));
+test('invalid parameter type rejected',()=>rejects(m=>{m.functions[0].params=['x'];m.functions[0].paramTypes=[42];}));
+test('invalid location rejected',()=>rejects(m=>m.functions[0].locations[0].column=-1));
+test('malformed imports rejected',()=>rejects(m=>m.imports=[{path:42,names:'x'}]));
+test('cyclic graph rejected before module initialization',()=>rejects((m,b)=>{m.imports=[{path:'./self.ai',names:['x']}];b.modules[0].dependencies={'./self.ai':'main.ai'};}));
+test('invalid module shape gives a language error',()=>assert.throws(()=>validateBundle({format:'aion.bundle',version:2,entry:'a',modules:[null]}),e=>e.code==='E_BYTECODE'));
+test('version one artifacts request rebuild',()=>{const b=bundle('');b.version=1;assert.throws(()=>validateBundle(b),/rebuild|version/i);});
+test('inconsistent branch stack heights rejected',()=>rejects(m=>{const f=m.functions[0];f.code=[['CONST',0],['JFALSE',4],['CONST',0],['JUMP',4],['CONST',0],['RETURN']];f.locations=Array.from({length:6},()=>({filename:'main.ai',line:1,column:1,start:0,end:0}));}));

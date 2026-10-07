@@ -1,0 +1,14 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {run} from './api.mjs';
+const typeError=s=>assert.throws(()=>run(s),e=>e.code==='E_TYPE');
+test('Any value cannot initialize typed binding incorrectly',()=>typeError(`let x: Int=json_parse('"oops"')`));
+test('Any assignment preserves binding type',()=>typeError(`var x: Int=1 x=json_parse('"oops"')`));
+test('typed parameter reassignment is checked',()=>typeError(`fn f(x: Int) {x=json_parse('"bad"')} f(1)`));
+test('explicit return annotation is checked after Any',()=>typeError(`fn f() -> Int {return json_parse('"bad"')} f()`));
+test('typed array aliases reject native push through Any',()=>typeError('let a: Int[]=[1] fn append(x) {push(x,"bad")} append(a)'));
+test('typed arrays reject aliased index writes',()=>typeError('let a: Int[]=[1] fn change(x) {x[0]="bad"} change(a)'));
+test('nested typed array contracts protect child aliases',()=>typeError('let a: Int[][]=[[1]] fn change(x){push(x,"bad")} change(a[0])'));
+test('new nested arrays inherit contracts',()=>typeError('let a: Int[][]=[[1]] fn change(x){x[0]=[2] push(x[0],"bad")} change(a)'));
+test('Float arrays accept integers and fractional values',()=>assert.equal(run('let a: Float[]=[1,2.5] push(a,3) print(a)').output,'[1, 2.5, 3]\n'));
+test('binding can hold first-class function',()=>assert.equal(run('let f=fn(x){return x+1} print(f(2))').output,'3\n'));
+test('array inference is symmetric for numeric promotion',()=>assert.equal(run('let a=[1.5,2] let b=[2,1.5] print(a,b)').output,'[1.5, 2] [2, 1.5]\n'));
+test('runtime reports used fuel separately',()=>{const result=run('print(1)');assert.ok(result.steps>0&&result.steps<100);assert.equal(result.steps+result.remainingFuel,1000000);});

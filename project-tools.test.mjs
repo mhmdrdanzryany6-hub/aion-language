@@ -1,0 +1,20 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawnSync} from 'node:child_process';
+const root=process.cwd(),call=(args,options={})=>spawnSync(process.execPath,[path.join(root,'cli.mjs'),...args],{encoding:'utf8',...options});
+function temporary(fn){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'aion-tools-'));try{return fn(dir);}finally{assert.ok(path.resolve(dir).startsWith(path.resolve(os.tmpdir())+path.sep+'aion-tools-'));fs.rmSync(dir,{recursive:true,force:true});}}
+test('init creates runnable tested project',()=>temporary(dir=>{const target=path.join(dir,'new');assert.equal(call(['init',target]).status,0);assert.ok(fs.existsSync(path.join(target,'aion.json')));assert.equal(call(['run'],{cwd:target}).stdout,'Hello from AION!\n');assert.equal(call(['test'],{cwd:target}).status,0);}));
+test('init refuses to overwrite files',()=>temporary(dir=>{fs.writeFileSync(path.join(dir,'keep.txt'),'keep');assert.equal(call(['init',dir]).status,1);assert.equal(fs.readFileSync(path.join(dir,'keep.txt'),'utf8'),'keep');}));
+test('manifest entry cannot escape root',()=>temporary(dir=>{fs.writeFileSync(path.join(dir,'aion.json'),JSON.stringify({name:'bad',entry:'../secret.ai',tests:'tests.ai'}));assert.match(call(['run'],{cwd:dir}).stderr,/E_PROJECT/);}));
+test('unknown option rejected',()=>{assert.equal(call(['run','hello.ai','--typo']).status,1);});
+test('missing option value rejected',()=>assert.match(call(['run','hello.ai','--fuel']).stderr,/E_ARGS/));
+test('short output flag cannot be swallowed as a value',()=>{assert.match(call(['build','hello.ai','--output','-o']).stderr,/E_ARGS/);});
+test('nested project entry can import within manifest root',()=>temporary(dir=>{fs.mkdirSync(path.join(dir,'src'));fs.writeFileSync(path.join(dir,'aion.json'),JSON.stringify({entry:'src/main.ai'}));fs.writeFileSync(path.join(dir,'lib.ai'),'export fn answer() { return 42 }');fs.writeFileSync(path.join(dir,'src/main.ai'),'import {answer} from "../lib.ai"\nprint(answer())');const result=call(['run'],{cwd:dir});assert.equal(result.status,0,result.stderr);assert.equal(result.stdout,'42\n');}));
+test('arguments after separator remain literal',()=>assert.equal(call(['run','hello.ai','--','--fuel']).status,0));
+test('JSON diagnostics are structured',()=>{const result=call(['run','missing.ai','--json-errors']);assert.equal(result.status,1);assert.equal(JSON.parse(result.stderr).code,'E_FILE');});
+test('Persian diagnostic guidance available',()=>assert.match(call(['run','missing.ai','--lang','fa']).stderr,/فایل/));
+test('format check reports without modifying source',()=>temporary(dir=>{const file=path.join(dir,'x.ai');fs.writeFileSync(file,'print(1)');const result=call(['fmt',file,'--check']);assert.equal(result.status,1);assert.equal(fs.readFileSync(file,'utf8'),'print(1)');}));
+test('REPL persists bindings and accepts expressions',()=>{const result=call(['repl'],{input:'let x=40\nx+2\n:quit\n'});assert.equal(result.status,0);assert.match(result.stdout,/42/);});
+test('REPL supports multiline functions',()=>{const result=call(['repl'],{input:'fn add(x) {\nreturn x+1\n}\nadd(2)\n:quit\n'});assert.equal(result.status,0);assert.match(result.stdout,/3/);});
+test('REPL persists callable native aliases',()=>{const result=call(['repl'],{input:'let p=print\np(1)\n:quit\n'});assert.equal(result.stderr,'');assert.match(result.stdout,/1/);});
+test('REPL preserves output before runtime failure',()=>{const result=call(['repl'],{input:'print("before") assert(false)\n:quit\n'});assert.match(result.stdout,/before/);assert.match(result.stderr,/E_ASSERT/);});
+test('source breakpoint includes locals',()=>{const result=call(['debug','hello.ai','--break','2']);assert.equal(result.status,0);assert.match(result.stderr,/BREAK.*hello.ai:2/s);});
+test('interactive debugger resumes from stdin command',()=>{const result=call(['debug','hello.ai','--interactive'],{input:'continue\n'});assert.equal(result.status,0);assert.match(result.stderr,/BREAK/);});

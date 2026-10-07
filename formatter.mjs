@@ -1,11 +1,26 @@
 import { lex } from './lexer.mjs';
 import { parse } from './parser.mjs';
-// Only leading indentation and trailing whitespace change. Newlines are semantic
-// after return, so this conservative formatter preserves every line boundary.
+// Preserve every line boundary: a newline after return changes its meaning.
 export function format(source){
-  parse(source);const tokens=lex(source,'<format>',{comments:true});let depth=0;
-  const lines=source.replace(/\r\n/g,'\n').split('\n');
-  const result=lines.map((line,index)=>{const here=tokens.filter(t=>t.line===index+1&&t.kind!=='eof');const first=here[0];const indent=Math.max(0,depth-(first?.kind==='}'?1:0));for(const t of here){if(t.kind==='{')depth++;if(t.kind==='}')depth--;}
-    return line.trim()? '  '.repeat(indent)+line.trim():'';}).join('\n').trimEnd()+'\n';
+  source=source.replace(/\r\n/g,'\n');parse(source);const tokens=lex(source,'<format>',{comments:true}),byLine=new Map(),protectedLines=new Set();let depth=0;
+  for(const token of tokens){if(token.kind==='eof')continue;const list=byLine.get(token.line)??[];list.push(token);byLine.set(token.line,list);if(token.kind==='comment'&&token.raw.includes('\n'))for(let line=token.line;line<=token.line+token.raw.split('\n').length-1;line++)protectedLines.add(line);}
+  const lines=source.split('\n'),formatted=[];
+  for(let index=0;index<lines.length;index++){
+    const here=byLine.get(index+1)??[],indent=Math.max(0,depth-(here[0]?.kind==='}'?1:0));
+    for(const token of here){if(token.kind==='{')depth++;if(token.kind==='}')depth--;}
+    if(protectedLines.has(index+1)){formatted.push(lines[index]);continue;}
+    if(!here.length){formatted.push('');continue;}
+    let line='  '.repeat(indent),previous=null;
+    for(const token of here){
+      let space=!!previous;
+      if([')',']',',',';',':','.'].includes(token.kind)||['(','[','.'].includes(previous?.kind))space=false;
+      if(token.kind==='('&&['id','fn',')',']'].includes(previous?.kind))space=false;
+      if(token.kind==='['&&['id',')',']'].includes(previous?.kind))space=false;
+      if(token.kind==='}'&&previous?.kind==='{')space=false;
+      if(space)line+=' ';line+=token.raw;previous=token;
+    }
+    formatted.push(line);
+  }
+  while(formatted.at(-1)==='')formatted.pop();const result=formatted.join('\n')+'\n';
   parse(result);return result;
 }

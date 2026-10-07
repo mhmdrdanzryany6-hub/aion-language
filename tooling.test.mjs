@@ -5,7 +5,7 @@ const cli=(...args)=>spawnSync(process.execPath,['cli.mjs',...args],{encoding:'u
 test('formatter preserves semantics and is idempotent',()=>{const source='fn main(){let a=[1,2,3];for n in a{print("n={n}")}}';const formatted=format(source);assert.equal(run(formatted).output,run(source).output);assert.equal(format(formatted),formatted);});
 test('formatter preserves line comments and literal interpolation',()=>{const source='// hi\nlet x=3\nprint("{{x}} {x}") // trailing\n';const formatted=format(source);assert.match(formatted,/\/\/ hi/);assert.match(formatted,/\/\/ trailing/);assert.equal(run(formatted).output,'{x} 3\n');});
 test('CLI help describes commands',()=>{const result=cli('help');assert.equal(result.status,0);assert.match(result.stdout,/run.*check.*build/s);});
-test('CLI version succeeds',()=>{const result=cli('--version');assert.equal(result.status,0);assert.match(result.stdout,/0\.1\.0/);});
+test('CLI version succeeds',()=>{const result=cli('--version');assert.equal(result.status,0);assert.match(result.stdout,/0\.2\.0/);});
 test('CLI rejects unknown command',()=>{const result=cli('nonsense');assert.equal(result.status,1);assert.match(result.stderr,/Unknown command/);});
 test('CLI reports missing files cleanly',()=>{const result=cli('run','does-not-exist.ai');assert.equal(result.status,1);assert.match(result.stderr,/E_FILE/);assert.doesNotMatch(result.stderr,/node:internal/);});
 test('CLI runs language tests',()=>{const result=cli('test','tests.ai');assert.equal(result.status,0);assert.match(result.stdout,/2 passed/);});
